@@ -1,210 +1,207 @@
 package components
 
 import (
-    "fmt"
-    "strings"
+	"fmt"
+	"strings"
 
-    "github.com/charmbracelet/bubbles/textinput"
-    tea "github.com/charmbracelet/bubbletea"
-    "github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
-// InputModel represents a form with multiple input fields
+// InputModel displays a configurable form of multiple text input fields
 type InputModel struct {
-    inputs   []textinput.Model
-    focused  int
-    title    string
-    width    int
-    height   int
-    done     bool
-    canceled bool
+	inputs   []textinput.Model
+	fields   []string
+	title    string
+	focused  int
+	done     bool
+	canceled bool
+	width    int
+	height   int
+	errs     map[int]string
 }
 
-// NewInputModel creates a new input form with the specified title and field placeholders
+// NewInputModel initializes the form input controller with field labels
 func NewInputModel(title string, fields []string) InputModel {
-    m := InputModel{
-        inputs:  make([]textinput.Model, len(fields)),
-        title:   title,
-        focused: 0,
-    }
+	m := InputModel{
+		inputs:  make([]textinput.Model, len(fields)),
+		fields:  fields,
+		title:   title,
+		focused: 0,
+		errs:    make(map[int]string),
+	}
 
-    for i, field := range fields {
-        t := textinput.New()
-        t.Placeholder = field
-        t.CharLimit = 200
-        t.Width = 60
+	for i, field := range fields {
+		t := textinput.New()
+		t.Placeholder = field
+		t.CharLimit = 200
+		t.Width = 60
 
-        if i == 0 {
-            t.Focus()
-            t.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-        }
+		if i == 0 {
+			t.Focus()
+			t.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+		}
+		m.inputs[i] = t
+	}
 
-        m.inputs[i] = t
-    }
-
-    return m
+	return m
 }
 
-// Init initializes the input model
 func (m InputModel) Init() tea.Cmd {
-    return textinput.Blink
+	return textinput.Blink
 }
 
-// Update handles messages and updates the input state
 func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
-    switch msg := msg.(type) {
-    case tea.KeyMsg:
-        switch msg.String() {
-        case "ctrl+c", "esc":
-            m.canceled = true
-            m.done = true
-            return m, nil
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc":
+			m.canceled = true
+			m.done = true
+			return m, nil
 
-        case "enter":
-            // Submit the form
-            m.done = true
-            return m, nil
+		case "enter":
+			// Fix: Enter only saves when pressing it on the final field.
+			// Otherwise, it moves down to the next text field.
+			if m.focused == len(m.inputs)-1 || len(m.inputs) == 1 {
+				m.done = true
+				return m, nil
+			}
+			m.nextField()
+			return m, nil
 
-        case "tab":
-            m.nextField()
+		case "tab":
+			m.nextField()
+		case "shift+tab":
+			m.prevField()
+		case "up":
+			m.prevField()
+		case "down":
+			m.nextField()
+		}
+	}
 
-        case "shift+tab":
-            m.prevField()
-
-        case "up":
-            m.prevField()
-
-        case "down":
-            m.nextField()
-        }
-    }
-
-    cmd := m.updateInputs(msg)
-    return m, cmd
+	cmd := m.updateInputs(msg)
+	return m, cmd
 }
 
-// nextField moves focus to the next input field
 func (m *InputModel) nextField() {
-    m.focused = (m.focused + 1) % len(m.inputs)
-
-    for i := range m.inputs {
-        if i == m.focused {
-            m.inputs[i].Focus()
-            m.inputs[i].PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-        } else {
-            m.inputs[i].Blur()
-            m.inputs[i].PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-        }
-    }
+	if len(m.inputs) > 0 {
+		m.focused = (m.focused + 1) % len(m.inputs)
+		m.refreshFocus()
+	}
 }
 
-// prevField moves focus to the previous input field
 func (m *InputModel) prevField() {
-    m.focused--
-    if m.focused < 0 {
-        m.focused = len(m.inputs) - 1
-    }
-
-    for i := range m.inputs {
-        if i == m.focused {
-            m.inputs[i].Focus()
-            m.inputs[i].PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-        } else {
-            m.inputs[i].Blur()
-            m.inputs[i].PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-        }
-    }
+	if len(m.inputs) > 0 {
+		m.focused--
+		if m.focused < 0 {
+			m.focused = len(m.inputs) - 1
+		}
+		m.refreshFocus()
+	}
 }
 
-// updateInputs updates all input fields with the given message
+func (m *InputModel) refreshFocus() {
+	for i := range m.inputs {
+		if i == m.focused {
+			m.inputs[i].Focus()
+			m.inputs[i].PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+		} else {
+			m.inputs[i].Blur()
+			m.inputs[i].PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+		}
+	}
+}
+
 func (m *InputModel) updateInputs(msg tea.Msg) tea.Cmd {
-    cmds := make([]tea.Cmd, len(m.inputs))
-
-    for i := range m.inputs {
-        m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
-    }
-
-    return tea.Batch(cmds...)
+	var cmds []tea.Cmd
+	for i := range m.inputs {
+		var cmd tea.Cmd
+		m.inputs[i], cmd = m.inputs[i].Update(msg)
+		cmds = append(cmds, cmd)
+	}
+	return tea.Batch(cmds...)
 }
 
-// View renders the input form
 func (m InputModel) View() string {
-    var s strings.Builder
+	var b strings.Builder
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render(m.title) + "\n\n")
 
-    // Title
-    titleStyle := lipgloss.NewStyle().
-        Bold(true).
-        Foreground(lipgloss.Color("205")).
-        MarginBottom(1)
-    s.WriteString(titleStyle.Render(m.title) + "\n\n")
+	for i, input := range m.inputs {
+		if i >= len(m.fields) {
+			break
+		}
+		
+		b.WriteString(fmt.Sprintf("%s:\n", m.fields[i]))
+		b.WriteString(input.View() + "\n")
 
-    // Input fields
-    for i := range m.inputs {
-        s.WriteString(m.inputs[i].View())
-        if i < len(m.inputs)-1 {
-            s.WriteString("\n\n")
-        }
-    }
+		if errMsg, exists := m.errs[i]; exists && errMsg != "" {
+			errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ff0000")).Italic(true)
+			b.WriteString(errStyle.Render("   ↳ "+errMsg) + "\n")
+		}
+		b.WriteString("\n")
+	}
 
-    // Help text
-    s.WriteString("\n\n")
-    helpStyle := lipgloss.NewStyle().
-        Foreground(lipgloss.Color("240"))
-    s.WriteString(helpStyle.Render("Tab/Shift+Tab: Navigate fields | Enter: Submit | Esc: Cancel"))
-
-    // Border and padding
-    return lipgloss.NewStyle().
-        Border(lipgloss.RoundedBorder()).
-        BorderForeground(lipgloss.Color("63")).
-        Padding(1, 2).
-        Width(m.width - 4).
-        Render(s.String())
+	footerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	b.WriteString(footerStyle.Render("\n[Tab/Down] Next Field • [Enter] Next Field or Submit • [Esc] Discard"))
+	return b.String()
 }
 
-// Values returns the current values of all input fields
-func (m InputModel) Values() []string {
-    values := make([]string, len(m.inputs))
-    for i, input := range m.inputs {
-        values[i] = input.Value()
-    }
-    return values
+func (m InputModel) GetValues() []string {
+	values := make([]string, len(m.inputs))
+	for i, input := range m.inputs {
+		values[i] = input.Value()
+	}
+	return values
 }
 
-// Done returns whether the form has been submitted or canceled
+func (m InputModel) Title() string {
+	return m.title
+}
+
+func (m *InputModel) SetFieldError(index int, errMsg string) {
+	m.errs[index] = errMsg
+}
+
+func (m *InputModel) ClearErrors() {
+	m.errs = make(map[int]string)
+}
+
+func (m *InputModel) ResetDoneStatus() {
+	m.done = false
+}
+
 func (m InputModel) Done() bool {
-    return m.done
+	return m.done
 }
 
-// Canceled returns whether the form was canceled
 func (m InputModel) Canceled() bool {
-    return m.canceled
+	return m.canceled
 }
 
-// SetSize sets the dimensions of the input form
 func (m *InputModel) SetSize(width, height int) {
-    m.width = width
-    m.height = height
+	m.width = width
+	m.height = height
 }
 
-// SetValues pre-fills the input fields with the given values
 func (m *InputModel) SetValues(values []string) {
-    for i, val := range values {
-        if i < len(m.inputs) {
-            m.inputs[i].SetValue(val)
-        }
-    }
+	for i, val := range values {
+		if i < len(m.inputs) {
+			m.inputs[i].SetValue(val)
+		}
+	}
 }
 
-// FocusedIndex returns the index of the currently focused input field
 func (m InputModel) FocusedIndex() int {
-    return m.focused
+	return m.focused
 }
 
-// String returns a summary of the form values
 func (m InputModel) String() string {
-    var parts []string
-    for i, input := range m.inputs {
-        parts = append(parts, fmt.Sprintf("Field %d: %s", i+1, input.Value()))
-    }
-    return strings.Join(parts, "\n")
+	var parts []string
+	for i, input := range m.inputs {
+		parts = append(parts, fmt.Sprintf("Field %d: %s", i+1, input.Value()))
+	}
+	return strings.Join(parts, "\n")
 }

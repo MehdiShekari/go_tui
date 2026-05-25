@@ -281,17 +281,9 @@ func (m *TaskListModel) SelectedTask() *models.Task {
     return &m.tasks[m.cursor]
 }
 
-// Helper functions
-func max(a, b int) int {
-    if a > b {
-        return a
-    }
-    return b
-}
 
-func min(a, b int) int {
-    if a < b {
-        return a
-    }
-    return b
+// ResetCursor moves the cursor safely back to the first task item
+func (m *TaskListModel) ResetCursor() {
+    m.cursor = 0
+    m.viewport.GotoTop()
 }
