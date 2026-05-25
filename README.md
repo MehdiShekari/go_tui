@@ -49,5 +49,6 @@ A highly responsive, terminal-based productivity interface built with Go. Powere
 ### Installation
 Clone this repository directly from source control and traverse into the workspace folder root:
 ```bash
-git clone [https://github.com/MehdiShekari/go_tui.git](https://github.com/MehdiShekari/go_tui.git)
+git clone https://github.com/MehdiShekari/go_tui.git
 cd go_tui
+```
